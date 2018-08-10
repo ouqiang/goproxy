@@ -51,8 +51,6 @@ type Delegate interface {
 
 var _ Delegate = &DefaultDelegate{}
 
-var defaultHandler = &DefaultDelegate{}
-
 // DefaultDelegate 默认Handler什么也不做
 type DefaultDelegate struct {
 	Delegate
