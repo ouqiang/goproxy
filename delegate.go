@@ -43,6 +43,8 @@ type Delegate interface {
 	BeforeResponse(ctx *Context, resp *http.Response, err error)
 	// ParentProxy 上级代理
 	ParentProxy(*http.Request) (*url.URL, error)
+	// BeforeTunnelForward 隧道转发前
+	BeforeTunnelForward(ctx *Context, rw http.ResponseWriter)
 	// Finish 本次请求结束
 	Finish(ctx *Context)
 	// 记录错误信息
@@ -67,6 +69,8 @@ func (h *DefaultDelegate) BeforeResponse(ctx *Context, resp *http.Response, err 
 func (h *DefaultDelegate) ParentProxy(req *http.Request) (*url.URL, error) {
 	return http.ProxyFromEnvironment(req)
 }
+
+func (h *DefaultDelegate) BeforeTunnelForward(ctx *Context, rw http.ResponseWriter) {}
 
 func (h *DefaultDelegate) Finish(ctx *Context) {}
 

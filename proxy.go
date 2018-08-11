@@ -114,6 +114,7 @@ func (p *Proxy) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
 		Req:  req,
 		Data: make(map[interface{}]interface{}),
 	}
+	defer p.delegate.Finish(ctx)
 	p.delegate.Connect(ctx, rw)
 	if ctx.abort {
 		return
@@ -129,7 +130,6 @@ func (p *Proxy) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
 	default:
 		p.forwardHTTP(ctx, rw)
 	}
-	p.delegate.Finish(ctx)
 }
 
 // ClientConnNum 获取客户端连接数
@@ -163,6 +163,11 @@ func (p *Proxy) forwardHTTP(ctx *Context, rw http.ResponseWriter) {
 
 // 隧道转发
 func (p *Proxy) forwardTunnel(ctx *Context, rw http.ResponseWriter) {
+	p.delegate.BeforeTunnelForward(ctx, rw)
+	if ctx.abort {
+		return
+	}
+
 	clientConn, err := p.hijacker(rw)
 	if err != nil {
 		p.delegate.ErrorLog(err)
