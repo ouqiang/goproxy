@@ -171,7 +171,7 @@ func (p *Proxy) ClientConnNum() int32 {
 	return atomic.LoadInt32(&p.clientConnNum)
 }
 
-// 执行HTTP请求，并调用responseFunc处理response
+// DoRequest 执行HTTP请求，并调用responseFunc处理response
 func (p *Proxy) DoRequest(ctx *Context, responseFunc func(*http.Response, error)) {
 	if ctx.Data == nil {
 		ctx.Data = make(map[interface{}]interface{})
@@ -220,7 +220,7 @@ func (p *Proxy) forwardHTTP(ctx *Context, rw http.ResponseWriter) {
 
 // HTTPS转发
 func (p *Proxy) forwardHTTPS(ctx *Context, rw http.ResponseWriter) {
-	clientConn, err := Hijacker(rw)
+	clientConn, err := hijacker(rw)
 	if err != nil {
 		p.delegate.ErrorLog(err)
 		rw.WriteHeader(http.StatusBadGateway)
@@ -274,7 +274,7 @@ func (p *Proxy) forwardHTTPS(ctx *Context, rw http.ResponseWriter) {
 
 // 隧道转发
 func (p *Proxy) forwardTunnel(ctx *Context, rw http.ResponseWriter) {
-	clientConn, err := Hijacker(rw)
+	clientConn, err := hijacker(rw)
 	if err != nil {
 		p.delegate.ErrorLog(err)
 		rw.WriteHeader(http.StatusBadGateway)
@@ -329,7 +329,7 @@ func (p *Proxy) transfer(src net.Conn, dst net.Conn) {
 }
 
 // 获取底层连接
-func Hijacker(rw http.ResponseWriter) (net.Conn, error) {
+func hijacker(rw http.ResponseWriter) (net.Conn, error) {
 	hijacker, ok := rw.(http.Hijacker)
 	if !ok {
 		return nil, fmt.Errorf("web server不支持Hijacker")

@@ -17,7 +17,7 @@ package cert
 
 import "crypto/tls"
 
-// 证书缓存接口
+// Cache 证书缓存接口
 type Cache interface {
 	Set(host string, c *tls.Certificate)
 	Get(host string) *tls.Certificate
