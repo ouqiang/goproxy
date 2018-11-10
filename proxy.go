@@ -17,9 +17,11 @@ package goproxy
 
 import (
 	"bufio"
+	"bytes"
 	"crypto/tls"
 	"fmt"
 	"io"
+	"io/ioutil"
 	"net"
 	"net/http"
 	"strings"
@@ -182,7 +184,7 @@ func (p *Proxy) DoRequest(ctx *Context, responseFunc func(*http.Response, error)
 	}
 	newReq := new(http.Request)
 	*newReq = *ctx.Req
-	newReq.Header = cloneHeader(newReq.Header)
+	newReq.Header = CloneHeader(newReq.Header)
 	removeConnectionHeaders(newReq.Header)
 	for _, item := range hopHeaders {
 		if newReq.Header.Get(item) != "" {
@@ -212,7 +214,7 @@ func (p *Proxy) forwardHTTP(ctx *Context, rw http.ResponseWriter) {
 			return
 		}
 		defer resp.Body.Close()
-		copyHeader(rw.Header(), resp.Header)
+		CopyHeader(rw.Header(), resp.Header)
 		rw.WriteHeader(resp.StatusCode)
 		io.Copy(rw, resp.Body)
 	})
@@ -342,8 +344,8 @@ func hijacker(rw http.ResponseWriter) (net.Conn, error) {
 	return conn, nil
 }
 
-// 浅拷贝Header
-func copyHeader(dst, src http.Header) {
+// CopyHeader 浅拷贝Header
+func CopyHeader(dst, src http.Header) {
 	for k, vv := range src {
 		for _, v := range vv {
 			dst.Add(k, v)
@@ -351,8 +353,8 @@ func copyHeader(dst, src http.Header) {
 	}
 }
 
-// 深拷贝Header
-func cloneHeader(h http.Header) http.Header {
+// CloneHeader 深拷贝Header
+func CloneHeader(h http.Header) http.Header {
 	h2 := make(http.Header, len(h))
 	for k, vv := range h {
 		vv2 := make([]string, len(vv))
@@ -360,6 +362,20 @@ func cloneHeader(h http.Header) http.Header {
 		h2[k] = vv2
 	}
 	return h2
+}
+
+// CloneBody 拷贝Body
+func CloneBody(b io.ReadCloser) (r io.ReadCloser, body []byte, err error) {
+	if b == nil {
+		return http.NoBody, nil, nil
+	}
+	body, err = ioutil.ReadAll(b)
+	if err != nil {
+		return http.NoBody, nil, err
+	}
+	r = ioutil.NopCloser(bytes.NewReader(body))
+
+	return r, body, nil
 }
 
 var hopHeaders = []string{
