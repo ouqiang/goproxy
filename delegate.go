@@ -32,6 +32,11 @@ func (c *Context) Abort() {
 	c.abort = true
 }
 
+// IsAborted 是否已中断执行
+func (c *Context) IsAborted() bool {
+	return c.abort
+}
+
 type Delegate interface {
 	// Connect 收到客户端连接
 	Connect(ctx *Context, rw http.ResponseWriter)

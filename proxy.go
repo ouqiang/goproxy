@@ -140,6 +140,9 @@ var _ http.Handler = &Proxy{}
 
 // ServeHTTP 实现了http.Handler接口
 func (p *Proxy) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
+	if req.URL.Host == "" {
+		req.URL.Host = req.Host
+	}
 	atomic.AddInt32(&p.clientConnNum, 1)
 	defer func() {
 		atomic.AddInt32(&p.clientConnNum, -1)
@@ -207,6 +210,7 @@ func (p *Proxy) DoRequest(ctx *Context, responseFunc func(*http.Response, error)
 
 // HTTP转发
 func (p *Proxy) forwardHTTP(ctx *Context, rw http.ResponseWriter) {
+	ctx.Req.URL.Scheme = "http"
 	p.DoRequest(ctx, func(resp *http.Response, err error) {
 		if err != nil {
 			p.delegate.ErrorLog(fmt.Errorf("%s - HTTP请求错误: , 错误: %s", ctx.Req.URL, err))
