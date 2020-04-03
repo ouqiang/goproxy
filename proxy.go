@@ -100,6 +100,9 @@ func New(opt ...Option) *Proxy {
 	}
 	if opts.transport == nil {
 		opts.transport = &http.Transport{
+			TLSClientConfig: &tls.Config{
+				InsecureSkipVerify: true,
+			},
 			DialContext: (&net.Dialer{
 				Timeout:   30 * time.Second,
 				KeepAlive: 30 * time.Second,
