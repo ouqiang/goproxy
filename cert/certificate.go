@@ -30,117 +30,7 @@ import (
 )
 
 var (
-	rootCA  *x509.Certificate
-	rootKey *rsa.PrivateKey
-)
-
-func init() {
-	var err error
-	rootCA, err = loadRootCA()
-	if err != nil {
-		panic(fmt.Errorf("加载根证书失败: %s", err))
-	}
-	rootKey, err = loadRootKey()
-	if err != nil {
-		panic(fmt.Errorf("加载根证书私钥失败: %s", err))
-	}
-}
-
-// Certificate 证书管理
-type Certificate struct {
-	cache Cache
-}
-
-func NewCertificate(cache Cache) *Certificate  {
-	return &Certificate{
-		cache:cache,
-	}
-}
-
-// Generate 生成证书
-func (c *Certificate) Generate(host string) (*tls.Config, error) {
-	if h, _, err := net.SplitHostPort(host); err == nil {
-		host = h
-	}
-	if c.cache != nil {
-		// 先从缓存中查找证书
-		if cert := c.cache.Get(host); cert != nil {
-			tlsConf := &tls.Config{
-				Certificates: []tls.Certificate{*cert},
-			}
-
-			return tlsConf, nil
-		}
-	}
-
-	priv, err := rsa.GenerateKey(crand.Reader, 2048)
-	if err != nil {
-		return nil, err
-	}
-	tmpl := c.template(host)
-	derBytes, err := x509.CreateCertificate(crand.Reader, tmpl, rootCA, &priv.PublicKey, rootKey)
-	if err != nil {
-		return nil, err
-	}
-	certBlock := &pem.Block{
-		Type:  "CERTIFICATE",
-		Bytes: derBytes,
-	}
-	serverCert := pem.EncodeToMemory(certBlock)
-
-	keyBlock := &pem.Block{
-		Type:  "RSA PRIVATE KEY",
-		Bytes: x509.MarshalPKCS1PrivateKey(priv),
-	}
-	serverKey := pem.EncodeToMemory(keyBlock)
-
-	cert, err := tls.X509KeyPair(serverCert, serverKey)
-	if err != nil {
-		return nil, err
-	}
-	tlsConf := &tls.Config{
-		Certificates: []tls.Certificate{cert},
-	}
-
-	if c.cache != nil {
-		// 缓存证书
-		c.cache.Set(host, &cert)
-	}
-
-	return tlsConf, nil
-}
-
-func (c *Certificate) template(host string) *x509.Certificate {
-	cert := &x509.Certificate{
-		SerialNumber: big.NewInt(1),
-		Subject: pkix.Name{
-			CommonName: host,
-		},
-		NotBefore:             time.Now().AddDate(-1, 0, 0),
-		NotAfter:              time.Now().AddDate(10, 0, 0),
-		BasicConstraintsValid: true,
-		ExtKeyUsage:           []x509.ExtKeyUsage{x509.ExtKeyUsageClientAuth, x509.ExtKeyUsageServerAuth},
-		KeyUsage:              x509.KeyUsageDigitalSignature | x509.KeyUsageDataEncipherment,
-		EmailAddresses:        []string{"qingqianludao@gmail.com"},
-	}
-
-	if ip := net.ParseIP(host); ip != nil {
-		cert.IPAddresses = []net.IP{ip}
-	} else {
-		cert.DNSNames = []string{host}
-	}
-
-	return cert
-}
-
-// RootCA 根证书
-func RootCA() *x509.Certificate  {
-	return rootCA
-}
-
-// 加载根证书
-func loadRootCA() (*x509.Certificate, error) {
-	block, _ := pem.Decode([]byte(`
+	rootCAPem = []byte(`
 -----BEGIN CERTIFICATE-----
 MIIFdDCCA1ygAwIBAgIBATANBgkqhkiG9w0BAQsFADBZMQ4wDAYDVQQGEwVDaGlu
 YTEPMA0GA1UECBMGRnVKaWFuMQ8wDQYDVQQHEwZYaWFtZW4xDTALBgNVBAoTBE1h
@@ -173,14 +63,8 @@ irCRNyFcDrKoyILOOUiPxoEcclrwUBTB78JxVA8xKTbAh0aZQRZOZOz49qF4gA1d
 1riiUHJIG2sD+54UEdFoR5nhZ4/RLGqQ/Kmch5VnPp7De4OzSMd/KkQDWEjR+AA1
 CDPlL4gNB6s=
 -----END CERTIFICATE-----
-`))
-
-	return x509.ParseCertificate(block.Bytes)
-}
-
-// 加载根证书私钥
-func loadRootKey() (*rsa.PrivateKey, error) {
-	block, _ := pem.Decode([]byte(`
+`)
+	rootKeyPem = []byte(`
 -----BEGIN RSA PRIVATE KEY-----
 MIIJKQIBAAKCAgEA2K6mkRtqdO+IKzjsAUgDL4BVcOFoidqXh8aY36QbW3E7hg/K
 Aoat2OiQJm2QvpkrrWLMWDoEtf6nrmPzCcA9k9mvdm7m+VwMztto7113G2deb98A
@@ -232,7 +116,136 @@ qfk0zJDVlvV1XA+NH9tuG/cs1YTUB4oQeV3APhuPlfI70zfwt1BxbqKlc9e9eRTB
 bLBpLIyXUddQx8XAHeLRUtEMvY1q7O49Ruz1kHFuVrzUKzDJNU9Piqa8NtkSvApQ
 4yQMI4Q3+P45ovUKxkTC+XP+qUZjML2WQaEiNn3KAK/1L5/1y/s4Weqqakgh
 -----END RSA PRIVATE KEY-----
-`))
+`)
+)
+
+var (
+	rootCA  *x509.Certificate
+	rootKey *rsa.PrivateKey
+)
+
+func init() {
+	var err error
+	rootCA, err = loadRootCA()
+	if err != nil {
+		panic(fmt.Errorf("加载根证书失败: %s", err))
+	}
+	rootKey, err = loadRootKey()
+	if err != nil {
+		panic(fmt.Errorf("加载根证书私钥失败: %s", err))
+	}
+}
+
+// Certificate 证书管理
+type Certificate struct {
+	cache Cache
+}
+
+func NewCertificate(cache Cache) *Certificate {
+	return &Certificate{
+		cache: cache,
+	}
+}
+
+// GenerateTlsConfig 生成TLS配置
+func (c *Certificate) GenerateTlsConfig(host string) (*tls.Config, error) {
+	if h, _, err := net.SplitHostPort(host); err == nil {
+		host = h
+	}
+	if c.cache != nil {
+		// 先从缓存中查找证书
+		if cert := c.cache.Get(host); cert != nil {
+			tlsConf := &tls.Config{
+				Certificates: []tls.Certificate{*cert},
+			}
+
+			return tlsConf, nil
+		}
+	}
+	serverCert, serverKey, err := c.GeneratePem(host)
+	if err != nil {
+		return nil, err
+	}
+	cert, err := tls.X509KeyPair(serverCert, serverKey)
+	if err != nil {
+		return nil, err
+	}
+	tlsConf := &tls.Config{
+		Certificates: []tls.Certificate{cert},
+	}
+
+	if c.cache != nil {
+		// 缓存证书
+		c.cache.Set(host, &cert)
+	}
+
+	return tlsConf, nil
+}
+
+// Generate 生成证书
+func (c *Certificate) GeneratePem(host string) (cert []byte, key []byte, err error) {
+	priv, err := rsa.GenerateKey(crand.Reader, 2048)
+	if err != nil {
+		return nil, nil, err
+	}
+	tmpl := c.template(host)
+	derBytes, err := x509.CreateCertificate(crand.Reader, tmpl, rootCA, &priv.PublicKey, rootKey)
+	if err != nil {
+		return nil, nil, err
+	}
+	certBlock := &pem.Block{
+		Type:  "CERTIFICATE",
+		Bytes: derBytes,
+	}
+	serverCert := pem.EncodeToMemory(certBlock)
+
+	keyBlock := &pem.Block{
+		Type:  "RSA PRIVATE KEY",
+		Bytes: x509.MarshalPKCS1PrivateKey(priv),
+	}
+	serverKey := pem.EncodeToMemory(keyBlock)
+
+	return serverCert, serverKey, nil
+}
+
+func (c *Certificate) template(host string) *x509.Certificate {
+	cert := &x509.Certificate{
+		SerialNumber: big.NewInt(1),
+		Subject: pkix.Name{
+			CommonName: host,
+		},
+		NotBefore:             time.Now().AddDate(-1, 0, 0),
+		NotAfter:              time.Now().AddDate(10, 0, 0),
+		BasicConstraintsValid: true,
+		ExtKeyUsage:           []x509.ExtKeyUsage{x509.ExtKeyUsageClientAuth, x509.ExtKeyUsageServerAuth},
+		KeyUsage:              x509.KeyUsageDigitalSignature | x509.KeyUsageDataEncipherment,
+		EmailAddresses:        []string{"qingqianludao@gmail.com"},
+	}
+
+	if ip := net.ParseIP(host); ip != nil {
+		cert.IPAddresses = []net.IP{ip}
+	} else {
+		cert.DNSNames = []string{host}
+	}
+
+	return cert
+}
+
+// RootCA 根证书
+func RootCAPem() []byte {
+	return rootCAPem
+}
+
+// 加载根证书
+func loadRootCA() (*x509.Certificate, error) {
+	block, _ := pem.Decode([]byte(rootCAPem))
+
+	return x509.ParseCertificate(block.Bytes)
+}
+
+// 加载根证书私钥
+func loadRootKey() (*rsa.PrivateKey, error) {
+	block, _ := pem.Decode(rootKeyPem)
 
 	return x509.ParsePKCS1PrivateKey(block.Bytes)
 }

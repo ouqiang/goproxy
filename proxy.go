@@ -239,7 +239,7 @@ func (p *Proxy) forwardHTTPS(ctx *Context, rw http.ResponseWriter) {
 		p.delegate.ErrorLog(fmt.Errorf("%s - HTTPS解密, 通知客户端隧道已连接失败, %s", ctx.Req.URL.Host, err))
 		return
 	}
-	tlsConfig, err := p.cert.Generate(ctx.Req.URL.Host)
+	tlsConfig, err := p.cert.GenerateTlsConfig(ctx.Req.URL.Host)
 	if err != nil {
 		p.delegate.ErrorLog(fmt.Errorf("%s - HTTPS解密, 生成证书失败: %s", ctx.Req.URL.Host, err))
 		rw.WriteHeader(http.StatusBadGateway)
