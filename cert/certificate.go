@@ -238,7 +238,7 @@ func RootCAPem() []byte {
 
 // 加载根证书
 func loadRootCA() (*x509.Certificate, error) {
-	block, _ := pem.Decode([]byte(rootCAPem))
+	block, _ := pem.Decode(rootCAPem)
 
 	return x509.ParseCertificate(block.Bytes)
 }
