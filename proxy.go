@@ -119,9 +119,7 @@ func New(opt ...Option) *Proxy {
 	p.delegate = opts.delegate
 	p.decryptHTTPS = opts.decryptHTTPS
 	if p.decryptHTTPS {
-		p.cert = &cert.Certificate{
-			Cache: opts.certCache,
-		}
+		p.cert = cert.NewCertificate(opts.certCache)
 	}
 	p.transport = opts.transport
 	p.transport.DisableKeepAlives = opts.disableKeepAlive

@@ -48,7 +48,13 @@ func init() {
 
 // Certificate 证书管理
 type Certificate struct {
-	Cache Cache
+	cache Cache
+}
+
+func NewCertificate(cache Cache) *Certificate  {
+	return &Certificate{
+		cache:cache,
+	}
 }
 
 // Generate 生成证书
@@ -56,13 +62,15 @@ func (c *Certificate) Generate(host string) (*tls.Config, error) {
 	if h, _, err := net.SplitHostPort(host); err == nil {
 		host = h
 	}
-	// 先从缓存中查找证书
-	if cert := c.Cache.Get(host); cert != nil {
-		tlsConf := &tls.Config{
-			Certificates: []tls.Certificate{*cert},
-		}
+	if c.cache != nil {
+		// 先从缓存中查找证书
+		if cert := c.cache.Get(host); cert != nil {
+			tlsConf := &tls.Config{
+				Certificates: []tls.Certificate{*cert},
+			}
 
-		return tlsConf, nil
+			return tlsConf, nil
+		}
 	}
 
 	priv, err := rsa.GenerateKey(crand.Reader, 2048)
@@ -94,8 +102,10 @@ func (c *Certificate) Generate(host string) (*tls.Config, error) {
 		Certificates: []tls.Certificate{cert},
 	}
 
-	// 缓存证书
-	c.Cache.Set(host, &cert)
+	if c.cache != nil {
+		// 缓存证书
+		c.cache.Set(host, &cert)
+	}
 
 	return tlsConf, nil
 }
@@ -107,7 +117,7 @@ func (c *Certificate) template(host string) *x509.Certificate {
 			CommonName: host,
 		},
 		NotBefore:             time.Now().AddDate(-1, 0, 0),
-		NotAfter:              time.Now().AddDate(1, 0, 0),
+		NotAfter:              time.Now().AddDate(10, 0, 0),
 		BasicConstraintsValid: true,
 		ExtKeyUsage:           []x509.ExtKeyUsage{x509.ExtKeyUsageClientAuth, x509.ExtKeyUsageServerAuth},
 		KeyUsage:              x509.KeyUsageDigitalSignature | x509.KeyUsageDataEncipherment,
@@ -121,6 +131,11 @@ func (c *Certificate) template(host string) *x509.Certificate {
 	}
 
 	return cert
+}
+
+// RootCA 根证书
+func RootCA() *x509.Certificate  {
+	return rootCA
 }
 
 // 加载根证书
