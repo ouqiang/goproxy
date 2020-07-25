@@ -163,7 +163,7 @@ func (p *Proxy) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
 	}
 
 	switch {
-	case ctx.Req.Method == http.MethodConnect && p.decryptHTTPS:
+	case ctx.Req.Method == http.MethodConnect && !ctx.abortHTTPS && p.decryptHTTPS:
 		p.forwardHTTPS(ctx, rw)
 	case ctx.Req.Method == http.MethodConnect:
 		p.forwardTunnel(ctx, rw)

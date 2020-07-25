@@ -22,14 +22,20 @@ import (
 
 // Context 代理上下文
 type Context struct {
-	Req   *http.Request
-	Data  map[interface{}]interface{}
-	abort bool
+	Req        *http.Request
+	Data       map[interface{}]interface{}
+	abort      bool
+	abortHTTPS bool
 }
 
 // Abort 中断执行
 func (c *Context) Abort() {
 	c.abort = true
+}
+
+// AbortHTTPS 本次请求不使用https代理
+func (c *Context) AbortHTTPS() {
+	c.abortHTTPS = true
 }
 
 // IsAborted 是否已中断执行
