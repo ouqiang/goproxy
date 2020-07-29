@@ -215,7 +215,7 @@ func (c *Certificate) template(host string) *x509.Certificate {
 			CommonName: host,
 		},
 		NotBefore:             time.Now().AddDate(-1, 0, 0),
-		NotAfter:              time.Now().AddDate(10, 0, 0),
+		NotAfter:              time.Now().AddDate(1, 0, 0),
 		BasicConstraintsValid: true,
 		ExtKeyUsage:           []x509.ExtKeyUsage{x509.ExtKeyUsageClientAuth, x509.ExtKeyUsageServerAuth},
 		KeyUsage:              x509.KeyUsageDigitalSignature | x509.KeyUsageDataEncipherment,
