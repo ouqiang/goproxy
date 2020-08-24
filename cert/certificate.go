@@ -234,9 +234,9 @@ func (c *Certificate) GenerateCA() (*Pair, error) {
 	tmpl := &x509.Certificate{
 		SerialNumber: big.NewInt(rand.Int63()),
 		Subject: pkix.Name{
-			CommonName:   "go-mitm-proxy",
+			CommonName:   "Mars",
 			Country:      []string{"China"},
-			Organization: []string{"Mars"},
+			Organization: []string{"4399.com"},
 			Province:     []string{"FuJian"},
 			Locality:     []string{"Xiamen"},
 		},
@@ -244,8 +244,9 @@ func (c *Certificate) GenerateCA() (*Pair, error) {
 		NotAfter:              time.Now().AddDate(30, 0, 0),
 		BasicConstraintsValid: true,
 		IsCA:                  true,
+		MaxPathLen:            2,
 		ExtKeyUsage:           []x509.ExtKeyUsage{x509.ExtKeyUsageClientAuth, x509.ExtKeyUsageServerAuth},
-		KeyUsage:              x509.KeyUsageDigitalSignature | x509.KeyUsageDataEncipherment,
+		KeyUsage:              x509.KeyUsageCertSign | x509.KeyUsageCRLSign,
 		EmailAddresses:        []string{"qingqianludao@gmail.com"},
 	}
 
