@@ -18,6 +18,7 @@ package cert
 import (
 	crand "crypto/rand"
 	"math/rand"
+	"strings"
 
 	"crypto/rsa"
 	"crypto/tls"
@@ -289,10 +290,13 @@ func (c *Certificate) template(host string) *x509.Certificate {
 		KeyUsage:              x509.KeyUsageDigitalSignature | x509.KeyUsageDataEncipherment,
 		EmailAddresses:        []string{"qingqianludao@gmail.com"},
 	}
-	if ip := net.ParseIP(host); ip != nil {
-		cert.IPAddresses = []net.IP{ip}
-	} else {
-		cert.DNSNames = []string{host}
+	hosts := strings.Split(host, ",")
+	for _, item := range hosts {
+		if ip := net.ParseIP(host); ip != nil {
+			cert.IPAddresses = append(cert.IPAddresses, ip)
+		} else {
+			cert.DNSNames = append(cert.DNSNames, item)
+		}
 	}
 
 	return cert
