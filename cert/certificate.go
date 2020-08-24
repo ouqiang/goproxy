@@ -17,6 +17,7 @@ package cert
 
 import (
 	crand "crypto/rand"
+	"math/rand"
 
 	"crypto/rsa"
 	"crypto/tls"
@@ -208,6 +209,49 @@ func (c *Certificate) GeneratePem(host string) (cert []byte, key []byte, err err
 	return serverCert, serverKey, nil
 }
 
+// GenerateCA 生成根证书
+func (c *Certificate) GenerateCA() (cert []byte, key []byte, err error) {
+	priv, err := rsa.GenerateKey(crand.Reader, 2048)
+	if err != nil {
+		return nil, nil, err
+	}
+	tmpl := &x509.Certificate{
+		SerialNumber: big.NewInt(rand.Int63()),
+		Subject: pkix.Name{
+			CommonName:   "go-mitm-proxy",
+			Country:      []string{"China"},
+			Organization: []string{"Mars"},
+			Province:     []string{"FuJian"},
+			Locality:     []string{"Xiamen"},
+		},
+		NotBefore:             time.Now().AddDate(0, -1, 0),
+		NotAfter:              time.Now().AddDate(30, 0, 0),
+		BasicConstraintsValid: true,
+		IsCA:                  true,
+		ExtKeyUsage:           []x509.ExtKeyUsage{x509.ExtKeyUsageClientAuth, x509.ExtKeyUsageServerAuth},
+		KeyUsage:              x509.KeyUsageDigitalSignature | x509.KeyUsageDataEncipherment,
+		EmailAddresses:        []string{"qingqianludao@gmail.com"},
+	}
+
+	derBytes, err := x509.CreateCertificate(crand.Reader, tmpl, tmpl, &priv.PublicKey, rootKey)
+	if err != nil {
+		return nil, nil, err
+	}
+	certBlock := &pem.Block{
+		Type:  "CERTIFICATE",
+		Bytes: derBytes,
+	}
+	serverCert := pem.EncodeToMemory(certBlock)
+
+	keyBlock := &pem.Block{
+		Type:  "RSA PRIVATE KEY",
+		Bytes: x509.MarshalPKCS1PrivateKey(priv),
+	}
+	serverKey := pem.EncodeToMemory(keyBlock)
+
+	return serverCert, serverKey, nil
+}
+
 func (c *Certificate) template(host string) *x509.Certificate {
 	cert := &x509.Certificate{
 		SerialNumber: big.NewInt(1),
@@ -221,7 +265,6 @@ func (c *Certificate) template(host string) *x509.Certificate {
 		KeyUsage:              x509.KeyUsageDigitalSignature | x509.KeyUsageDataEncipherment,
 		EmailAddresses:        []string{"qingqianludao@gmail.com"},
 	}
-
 	if ip := net.ParseIP(host); ip != nil {
 		cert.IPAddresses = []net.IP{ip}
 	} else {
