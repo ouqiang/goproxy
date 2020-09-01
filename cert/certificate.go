@@ -173,7 +173,7 @@ func (c *Certificate) GenerateTlsConfig(host string) (*tls.Config, error) {
 			return tlsConf, nil
 		}
 	}
-	pair, err := c.GeneratePem(host, defaultRootCA, defaultRootKey)
+	pair, err := c.GeneratePem(host, 1, defaultRootCA, defaultRootKey)
 	if err != nil {
 		return nil, err
 	}
@@ -194,12 +194,12 @@ func (c *Certificate) GenerateTlsConfig(host string) (*tls.Config, error) {
 }
 
 // Generate 生成证书
-func (c *Certificate) GeneratePem(host string, rootCA *x509.Certificate, rootKey *rsa.PrivateKey) (*Pair, error) {
+func (c *Certificate) GeneratePem(host string, expireDays int, rootCA *x509.Certificate, rootKey *rsa.PrivateKey) (*Pair, error) {
 	priv, err := rsa.GenerateKey(crand.Reader, 2048)
 	if err != nil {
 		return nil, err
 	}
-	tmpl := c.template(host)
+	tmpl := c.template(host, expireDays)
 	derBytes, err := x509.CreateCertificate(crand.Reader, tmpl, rootCA, &priv.PublicKey, rootKey)
 	if err != nil {
 		return nil, err
@@ -277,14 +277,14 @@ func (c *Certificate) GenerateCA() (*Pair, error) {
 	return p, nil
 }
 
-func (c *Certificate) template(host string) *x509.Certificate {
+func (c *Certificate) template(host string, expireYears int) *x509.Certificate {
 	cert := &x509.Certificate{
 		SerialNumber: big.NewInt(1),
 		Subject: pkix.Name{
 			CommonName: host,
 		},
 		NotBefore:             time.Now().AddDate(-1, 0, 0),
-		NotAfter:              time.Now().AddDate(1, 0, 0),
+		NotAfter:              time.Now().AddDate(expireYears, 0, 0),
 		BasicConstraintsValid: true,
 		ExtKeyUsage:           []x509.ExtKeyUsage{x509.ExtKeyUsageClientAuth, x509.ExtKeyUsageServerAuth},
 		KeyUsage:              x509.KeyUsageDigitalSignature | x509.KeyUsageDataEncipherment,
