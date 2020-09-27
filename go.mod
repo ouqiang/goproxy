@@ -1,3 +1,3 @@
-module github.com/lh900519/goproxy
+module github.com/ouqiang/goproxy
 
 go 1.13
