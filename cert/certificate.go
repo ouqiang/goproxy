@@ -242,7 +242,7 @@ func (c *Certificate) GenerateCA() (*Pair, error) {
 			Locality:     []string{"Xiamen"},
 		},
 		NotBefore:             time.Now().AddDate(0, -1, 0),
-		NotAfter:              time.Now().AddDate(30, 0, 0),
+		NotAfter:              time.Now().AddDate(1, 0, 0),
 		BasicConstraintsValid: true,
 		IsCA:                  true,
 		MaxPathLen:            2,
