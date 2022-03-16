@@ -37,6 +37,13 @@ func (c *Context) IsAborted() bool {
 	return c.abort
 }
 
+// Reset 重置
+func (c *Context) Reset(req *http.Request)  {
+	c.Req = req
+	c.Data = make(map[interface{}]interface{})
+	c.abort = false
+}
+
 type Delegate interface {
 	// Connect 收到客户端连接
 	Connect(ctx *Context, rw http.ResponseWriter)
