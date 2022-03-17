@@ -60,7 +60,7 @@ var (
 			return new(Context)
 		},
 	}
-	headerPool  = newHeaderPool()
+	headerPool  = NewHeaderPool()
 	requestPool = newRequestPool()
 )
 
@@ -116,7 +116,7 @@ type HeaderPool struct {
 	pool sync.Pool
 }
 
-func newHeaderPool() *HeaderPool {
+func NewHeaderPool() *HeaderPool {
 	return &HeaderPool{
 		pool: sync.Pool{
 			New: func() interface{} {
