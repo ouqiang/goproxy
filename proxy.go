@@ -627,14 +627,13 @@ func CloneBody(b io.ReadCloser) (r io.ReadCloser, body []byte, err error) {
 	if b == nil {
 		return http.NoBody, nil, nil
 	}
-	buf := bytes.NewBuffer(bufPool.Get().([]byte))
-	_, err = io.Copy(buf, r)
+	body, err = ioutil.ReadAll(b)
 	if err != nil {
 		return http.NoBody, nil, err
 	}
-	r = ioutil.NopCloser(buf)
+	r = ioutil.NopCloser(bytes.NewReader(body))
 
-	return r, buf.Bytes(), nil
+	return r, body, nil
 }
 
 var hopHeaders = []string{
