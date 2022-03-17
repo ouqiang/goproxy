@@ -18,14 +18,13 @@ package goproxy
 import (
 	"bufio"
 	"bytes"
+	"context"
 	"crypto/tls"
 	"fmt"
 	"io"
 	"io/ioutil"
 	"net"
 	"net/http"
-	"net/url"
-	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -214,7 +213,7 @@ func New(opt ...Option) *Proxy {
 				KeepAlive: 30 * time.Second,
 			}).DialContext,
 			MaxIdleConns:          100,
-			IdleConnTimeout:       90 * time.Second,
+			IdleConnTimeout:       10 * time.Second,
 			TLSHandshakeTimeout:   10 * time.Second,
 			ExpectContinueTimeout: 1 * time.Second,
 		}
@@ -271,9 +270,9 @@ func (p *Proxy) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
 
 	switch {
 	case ctx.Req.Method == http.MethodConnect:
-		p.forwardTunnel(ctx, rw)
+		p.tunnelProxy(ctx, rw)
 	default:
-		p.forwardHTTP(ctx, rw)
+		p.httpProxy(ctx, rw)
 	}
 }
 
@@ -316,12 +315,12 @@ func (p *Proxy) DoRequest(ctx *Context, responseFunc func(*http.Response, error)
 	requestPool.Put(newReq)
 }
 
-// HTTP转发
-func (p *Proxy) forwardHTTP(ctx *Context, rw http.ResponseWriter) {
+// HTTP代理
+func (p *Proxy) httpProxy(ctx *Context, rw http.ResponseWriter) {
 	ctx.Req.URL.Scheme = "http"
 	p.DoRequest(ctx, func(resp *http.Response, err error) {
 		if err != nil {
-			p.delegate.ErrorLog(fmt.Errorf("%s - HTTP请求错误: , 错误: %s", ctx.Req.URL, err))
+			p.delegate.ErrorLog(fmt.Errorf("%s - HTTP请求错误: %s", ctx.Req.URL, err))
 			rw.WriteHeader(http.StatusBadGateway)
 			return
 		}
@@ -336,8 +335,8 @@ func (p *Proxy) forwardHTTP(ctx *Context, rw http.ResponseWriter) {
 	})
 }
 
-// HTTPS转发
-func (p *Proxy) forwardHTTPS(ctx *Context, clientConn net.Conn) {
+// HTTPS代理
+func (p *Proxy) httpsProxy(ctx *Context, clientConn net.Conn) {
 	tlsConfig, err := p.cert.GenerateTlsConfig(ctx.Req.URL.Host)
 	if err != nil {
 		p.delegate.ErrorLog(fmt.Errorf("%s - HTTPS解密, 生成证书失败: %s", ctx.Req.URL.Host, err))
@@ -352,6 +351,8 @@ func (p *Proxy) forwardHTTPS(ctx *Context, clientConn net.Conn) {
 		p.delegate.ErrorLog(fmt.Errorf("%s - HTTPS解密, 握手失败: %s", ctx.Req.URL.Host, err))
 		return
 	}
+	_ = tlsClientConn.SetDeadline(time.Time{})
+
 	buf := bufio.NewReader(tlsClientConn)
 	tlsReq, err := http.ReadRequest(buf)
 	if err != nil {
@@ -366,7 +367,7 @@ func (p *Proxy) forwardHTTPS(ctx *Context, clientConn net.Conn) {
 
 	ctx.Req = tlsReq
 	if websocket.IsWebSocketUpgrade(ctx.Req) {
-		p.forwardWebsocket(ctx, NewConnBuffer(tlsClientConn, nil))
+		p.websocketProxy(ctx, NewConnBuffer(tlsClientConn, nil))
 		return
 	}
 
@@ -376,7 +377,6 @@ func (p *Proxy) forwardHTTPS(ctx *Context, clientConn net.Conn) {
 			_, _ = tlsClientConn.Write(badGateway)
 			return
 		}
-
 		err = resp.Write(tlsClientConn)
 		if err != nil {
 			p.delegate.ErrorLog(fmt.Errorf("%s - HTTPS解密, response写入客户端失败, %s", ctx.Req.URL, err))
@@ -385,8 +385,8 @@ func (p *Proxy) forwardHTTPS(ctx *Context, clientConn net.Conn) {
 	})
 }
 
-// 隧道转发
-func (p *Proxy) forwardTunnel(ctx *Context, rw http.ResponseWriter) {
+// 隧道代理
+func (p *Proxy) tunnelProxy(ctx *Context, rw http.ResponseWriter) {
 	clientConn, err := hijacker(rw)
 	if err != nil {
 		p.delegate.ErrorLog(err)
@@ -413,8 +413,19 @@ func (p *Proxy) forwardTunnel(ctx *Context, rw http.ResponseWriter) {
 
 	isWebsocket := p.detectConnProtocol(clientConn)
 	if isWebsocket {
-		_, err = clientConn.Write(tunnelEstablishedResponseLine)
-		p.forwardWebsocket(ctx, clientConn)
+		req, err := http.ReadRequest(clientConn.BufferReader())
+		if err != nil {
+			if err != io.EOF {
+				p.delegate.ErrorLog(fmt.Errorf("%s - websocket读取客户端升级请求失败: %s", ctx.Req.URL.Host, err))
+			}
+			return
+		}
+		req.RemoteAddr = ctx.Req.RemoteAddr
+		req.URL.Scheme = "http"
+		req.URL.Host = req.Host
+		ctx.Req = req
+
+		p.websocketProxy(ctx, clientConn)
 		return
 	}
 
@@ -440,42 +451,20 @@ func (p *Proxy) forwardTunnel(ctx *Context, rw http.ResponseWriter) {
 	}
 
 	if p.decryptHTTPS {
-		p.forwardHTTPS(ctx, clientConn)
+		p.httpsProxy(ctx, clientConn)
 	} else {
 		p.transfer(clientConn, targetConn)
 	}
 }
 
-// 探测连接协议
-func (p *Proxy) detectConnProtocol(connBuf *ConnBuffer) (isWebsocket bool) {
-	methodBytes, err := connBuf.Peek(3)
-	if err != nil {
-		return false
-	}
-	method := strings.TrimSpace(string(methodBytes))
-	if method != http.MethodGet {
-		return false
-	}
-
-	return true
-}
-
-// websocket转发
-func (p *Proxy) forwardWebsocket(ctx *Context, srcConn *ConnBuffer) {
-	fmt.Println("websocket代理", ctx.Req.URL)
+// WebSocket代理
+func (p *Proxy) websocketProxy(ctx *Context, srcConn *ConnBuffer) {
 	if !p.websocketIntercept {
-		remoteAddr := ctx.Req.URL.Host
-		ports := map[string]string{
-			"https": ":443",
-			"http":  ":80",
-		}
-		if !strings.Contains(remoteAddr, ":") {
-			remoteAddr += ports[ctx.Req.URL.Scheme]
-		}
+		remoteAddr := ctx.Addr()
 		var err error
 		var targetConn net.Conn
-		if ctx.Req.URL.Scheme == "https" {
-			targetConn, err = tls.Dial("tcp", remoteAddr, nil)
+		if ctx.IsHTTPS() {
+			targetConn, err = tls.Dial("tcp", remoteAddr, &tls.Config{InsecureSkipVerify: true})
 		} else {
 			targetConn, err = net.Dial("tcp", remoteAddr)
 		}
@@ -483,14 +472,11 @@ func (p *Proxy) forwardWebsocket(ctx *Context, srcConn *ConnBuffer) {
 			p.delegate.ErrorLog(fmt.Errorf("%s - websocket连接目标服务器错误: %s", ctx.Req.URL.Host, err))
 			return
 		}
-		err = ctx.Req.WriteProxy(targetConn)
+		err = ctx.Req.Write(targetConn)
 		if err != nil {
-			p.delegate.ErrorLog(fmt.Errorf("%s - websocket连接目标服务器错误: %s", ctx.Req.URL.Host, err))
+			p.delegate.ErrorLog(fmt.Errorf("%s - websocket协议转换请求写入目标服务器错误: %s", ctx.Req.URL.Host, err))
 			return
 		}
-		defer func() {
-			_ = targetConn.Close()
-		}()
 		p.transfer(srcConn, targetConn)
 		return
 	}
@@ -508,14 +494,8 @@ func (p *Proxy) forwardWebsocket(ctx *Context, srcConn *ConnBuffer) {
 		p.delegate.ErrorLog(fmt.Errorf("%s - 源连接升级到websocket协议错误: %s", ctx.Req.URL.Host, err))
 		return
 	}
-	u := new(url.URL)
-	*u = *ctx.Req.URL
-	if u.Scheme == "https" {
-		u.Scheme = "wss"
-	} else {
-		u.Scheme = "ws"
-	}
 
+	u := ctx.WebsocketUrl()
 	d := websocket.Dialer{
 		ReadBufferSize:  4096,
 		WriteBufferSize: 4096,
@@ -526,32 +506,62 @@ func (p *Proxy) forwardWebsocket(ctx *Context, srcConn *ConnBuffer) {
 		p.delegate.ErrorLog(fmt.Errorf("%s - 目标连接升级到websocket协议错误: %s", ctx.Req.URL.Host, err))
 		return
 	}
+	p.transferWebsocket(ctx, srcWSConn, targetWSConn)
+}
+
+// 探测连接协议
+func (p *Proxy) detectConnProtocol(connBuf *ConnBuffer) (isWebsocket bool) {
+	methodBytes, err := connBuf.Peek(3)
+	if err != nil {
+		return false
+	}
+	method := string(methodBytes)
+	if method != http.MethodGet {
+		return false
+	}
+
+	return true
+}
+
+// webSocket双向转发
+func (p *Proxy) transferWebsocket(ctx *Context, srcConn *websocket.Conn, targetConn *websocket.Conn) {
+	doneCtx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
 	go func() {
 		for {
-			msgType, msg, err := srcWSConn.ReadMessage()
-			if err != nil {
-				p.delegate.ErrorLog(fmt.Errorf("%s - websocket消息转发错误: %s", ctx.Req.URL.Host, err))
+			if doneCtx.Err() != nil {
 				return
 			}
-			fmt.Printf("%s\n", msg)
-			err = targetWSConn.WriteMessage(msgType, msg)
+
+			msgType, msg, err := srcConn.ReadMessage()
 			if err != nil {
-				p.delegate.ErrorLog(fmt.Errorf("%s - websocket消息转发错误: %s", ctx.Req.URL.Host, err))
+				p.delegate.ErrorLog(fmt.Errorf("websocket消息转发错误: [%s -> %s] %s", srcConn.RemoteAddr(), targetConn.RemoteAddr(), err))
+				return
+			}
+			p.delegate.WebSocketSendMessage(ctx, &msgType, &msg)
+			err = targetConn.WriteMessage(msgType, msg)
+			if err != nil {
+				p.delegate.ErrorLog(fmt.Errorf("websocket消息转发错误: [%s -> %s] %s", srcConn.RemoteAddr(), targetConn.RemoteAddr(), err))
 				return
 			}
 		}
 	}()
 
 	for {
-		msgType, msg, err := targetWSConn.ReadMessage()
-		if err != nil {
-			p.delegate.ErrorLog(fmt.Errorf("%s - websocket消息转发错误: %s", ctx.Req.URL.Host, err))
+		if doneCtx.Err() != nil {
 			return
 		}
-		fmt.Printf("%s\n", msg)
-		err = srcWSConn.WriteMessage(msgType, msg)
+
+		msgType, msg, err := targetConn.ReadMessage()
 		if err != nil {
-			p.delegate.ErrorLog(fmt.Errorf("%s - websocket消息转发错误: %s", ctx.Req.URL.Host, err))
+			p.delegate.ErrorLog(fmt.Errorf("websocket消息转发错误: [%s -> %s] %s", targetConn.RemoteAddr(), srcConn.RemoteAddr(), err))
+			return
+		}
+		p.delegate.WebSocketReceiveMessage(ctx, &msgType, &msg)
+		err = srcConn.WriteMessage(msgType, msg)
+		if err != nil {
+			p.delegate.ErrorLog(fmt.Errorf("websocket消息转发错误: [%s -> %s] %s", targetConn.RemoteAddr(), srcConn.RemoteAddr(), err))
 			return
 		}
 	}
@@ -584,7 +594,7 @@ func (p *Proxy) transfer(src net.Conn, dst net.Conn) {
 func hijacker(rw http.ResponseWriter) (*ConnBuffer, error) {
 	hijacker, ok := rw.(http.Hijacker)
 	if !ok {
-		return nil, fmt.Errorf("web server不支持Hijacker")
+		return nil, fmt.Errorf("http server不支持Hijacker")
 	}
 	conn, buf, err := hijacker.Hijack()
 	if err != nil {
@@ -646,11 +656,14 @@ func NewConnBuffer(conn net.Conn, buf *bufio.ReadWriter) *ConnBuffer {
 	if buf == nil {
 		buf = bufio.NewReadWriter(bufio.NewReader(conn), bufio.NewWriter(conn))
 	}
-
 	return &ConnBuffer{
 		Conn: conn,
 		buf:  buf,
 	}
+}
+
+func (cb *ConnBuffer) BufferReader() *bufio.Reader {
+	return cb.buf.Reader
 }
 
 func (cb *ConnBuffer) Read(b []byte) (n int, err error) {
@@ -674,8 +687,6 @@ func (cb *ConnBuffer) Hijack() (net.Conn, *bufio.ReadWriter, error) {
 	return cb.Conn, cb.buf, nil
 }
 
-func (cb *ConnBuffer) WriteHeader(statusCode int) {}
+func (cb *ConnBuffer) WriteHeader(_ int) {}
 
-func (cb *ConnBuffer) Header() http.Header {
-	return nil
-}
+func (cb *ConnBuffer) Header() http.Header { return nil }
