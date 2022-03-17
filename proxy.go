@@ -459,6 +459,20 @@ func (p *Proxy) tunnelProxy(ctx *Context, rw http.ResponseWriter) {
 
 // WebSocket代理
 func (p *Proxy) websocketProxy(ctx *Context, srcConn *ConnBuffer) {
+	{
+		p.delegate.BeforeRequest(ctx)
+		resp := &http.Response{
+			Status:     "200 OK",
+			StatusCode: http.StatusOK,
+			Proto:      "1.1",
+			ProtoMajor: 1,
+			ProtoMinor: 1,
+			Header:     http.Header{},
+			Body:       http.NoBody,
+		}
+		p.delegate.BeforeResponse(ctx, resp, nil)
+	}
+
 	if !p.websocketIntercept {
 		remoteAddr := ctx.Addr()
 		var err error
