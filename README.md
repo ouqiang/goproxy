@@ -43,6 +43,11 @@ curl -x localhost:8080 https://www.baidu.com
 中间人代理, 解密HTTPS
 ---
 系统需导入根证书 mitm-proxy.crt
+---
+.p12证书转换 
+openssl pkcs12 -in 1111.p12 -nocerts -nodes -out 1.key
+openssl rsa -in 1.key -out apple_pay_pri.pem
+openssl pkcs12 -in 1111.p12 -out filename.cer
 ```go
 package main
 
@@ -53,6 +58,7 @@ import (
 	"time"
 
 	"github.com/ouqiang/goproxy"
+    "github.com/ouqiang/goproxy/cert"
 )
 // 实现证书缓存接口
 type Cache struct {
@@ -72,6 +78,12 @@ func (c *Cache) Get(host string) *tls.Certificate {
 }
 
 func main() {
+    crtData, err := ioutil.ReadFile("resources/filename.crt")
+    fmt.Println(err)
+    pemData, err := ioutil.ReadFile("resources/apple_pay_pri.pem")
+    fmt.Println(err)
+
+    cert.ResetTlsKey(pemData, crtData)
 	proxy := goproxy.New(goproxy.WithDecryptHTTPS(&Cache{}))
 	server := &http.Server{
 		Addr:         ":8080",

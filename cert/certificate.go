@@ -127,17 +127,7 @@ var (
 )
 
 func init() {
-	var err error
-	block, _ := pem.Decode(defaultRootCAPem)
-	defaultRootCA, err = x509.ParseCertificate(block.Bytes)
-	if err != nil {
-		panic(fmt.Errorf("加载根证书失败: %s", err))
-	}
-	block, _ = pem.Decode(defaultRootKeyPem)
-	defaultRootKey, err = x509.ParsePKCS1PrivateKey(block.Bytes)
-	if err != nil {
-		panic(fmt.Errorf("加载根证书私钥失败: %s", err))
-	}
+	ResetTlsKey(defaultRootKeyPem, defaultRootCAPem)
 }
 
 // Certificate 证书管理
@@ -150,6 +140,23 @@ type Pair struct {
 	CertBytes       []byte
 	PrivateKey      *rsa.PrivateKey
 	PrivateKeyBytes []byte
+}
+
+// 允许用户设置用户证书
+// rootKeyPem   PRIVATE KEY 文件
+// rootCaPem    ert 文件
+func ResetTlsKey(rootKeyPem, rootCaPem []byte)  {
+	var err error
+	block, _ := pem.Decode(rootCaPem)
+	defaultRootCA, err = x509.ParseCertificate(block.Bytes)
+	if err != nil {
+		panic(fmt.Errorf("加载根证书失败: %s", err))
+	}
+	block, _ = pem.Decode(rootKeyPem)
+	defaultRootKey, err = x509.ParsePKCS1PrivateKey(block.Bytes)
+	if err != nil {
+		panic(fmt.Errorf("加载根证书私钥失败: %s", err))
+	}
 }
 
 func NewCertificate(cache Cache) *Certificate {
