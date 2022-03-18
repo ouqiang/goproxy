@@ -453,25 +453,14 @@ func (p *Proxy) tunnelProxy(ctx *Context, rw http.ResponseWriter) {
 	if p.decryptHTTPS {
 		p.httpsProxy(ctx, clientConn)
 	} else {
+		p.tunnelConnected(ctx)
 		p.transfer(clientConn, targetConn)
 	}
 }
 
 // WebSocket代理
 func (p *Proxy) websocketProxy(ctx *Context, srcConn *ConnBuffer) {
-	{
-		p.delegate.BeforeRequest(ctx)
-		resp := &http.Response{
-			Status:     "200 OK",
-			StatusCode: http.StatusOK,
-			Proto:      "1.1",
-			ProtoMajor: 1,
-			ProtoMinor: 1,
-			Header:     http.Header{},
-			Body:       http.NoBody,
-		}
-		p.delegate.BeforeResponse(ctx, resp, nil)
-	}
+	p.tunnelConnected(ctx)
 
 	if !p.websocketIntercept {
 		remoteAddr := ctx.Addr()
@@ -602,6 +591,21 @@ func (p *Proxy) transfer(src net.Conn, dst net.Conn) {
 	bufPool.Put(buf)
 	_ = dst.Close()
 	_ = src.Close()
+}
+
+func (p *Proxy) tunnelConnected(ctx *Context) {
+	ctx.TunnelProxy = true
+	p.delegate.BeforeRequest(ctx)
+	resp := &http.Response{
+		Status:     "200 OK",
+		StatusCode: http.StatusOK,
+		Proto:      "1.1",
+		ProtoMajor: 1,
+		ProtoMinor: 1,
+		Header:     http.Header{},
+		Body:       http.NoBody,
+	}
+	p.delegate.BeforeResponse(ctx, resp, nil)
 }
 
 // 获取底层连接
