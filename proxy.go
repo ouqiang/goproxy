@@ -271,6 +271,8 @@ func (p *Proxy) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
 	switch {
 	case ctx.Req.Method == http.MethodConnect:
 		p.tunnelProxy(ctx, rw)
+	case websocket.IsWebSocketUpgrade(ctx.Req):
+		p.tunnelProxy(ctx, rw)
 	default:
 		p.httpProxy(ctx, rw)
 	}
@@ -396,6 +398,11 @@ func (p *Proxy) tunnelProxy(ctx *Context, rw http.ResponseWriter) {
 	defer func() {
 		_ = clientConn.Close()
 	}()
+
+	if websocket.IsWebSocketUpgrade(ctx.Req) {
+		p.websocketProxy(ctx, clientConn)
+		return
+	}
 
 	parentProxyURL, err := p.delegate.ParentProxy(ctx.Req)
 	if err != nil {
