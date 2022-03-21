@@ -607,11 +607,6 @@ func (p *Proxy) transfer(src net.Conn, dst net.Conn) {
 }
 
 func (p *Proxy) tunnelConnected(ctx *Context, err error) {
-	switch {
-	case p.decryptHTTPS && err == nil:
-		return
-	}
-
 	ctx.TunnelProxy = true
 	p.delegate.BeforeRequest(ctx)
 	if err != nil {
