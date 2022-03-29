@@ -296,13 +296,17 @@ func (c *Certificate) template(host string, expireYears int) *x509.Certificate {
 	cert := &x509.Certificate{
 		SerialNumber: big.NewInt(rand.Int63()),
 		Subject: pkix.Name{
-			CommonName: host,
+			CommonName:   host,
+			Country:      []string{"China"},
+			Organization: []string{"goproxy"},
+			Province:     []string{"FuJian"},
+			Locality:     []string{"Xiamen"},
 		},
 		NotBefore:             time.Now().AddDate(-1, 0, 0),
 		NotAfter:              time.Now().AddDate(expireYears, 0, 0),
 		BasicConstraintsValid: true,
 		ExtKeyUsage:           []x509.ExtKeyUsage{x509.ExtKeyUsageClientAuth, x509.ExtKeyUsageServerAuth},
-		KeyUsage:              x509.KeyUsageDigitalSignature | x509.KeyUsageDataEncipherment,
+		KeyUsage:              x509.KeyUsageDigitalSignature | x509.KeyUsageDataEncipherment | x509.KeyUsageKeyEncipherment,
 		EmailAddresses:        []string{"qingqianludao@gmail.com"},
 	}
 	hosts := strings.Split(host, ",")
