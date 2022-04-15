@@ -351,24 +351,7 @@ func (p *Proxy) httpProxy(ctx *Context, rw http.ResponseWriter) {
 }
 
 // HTTPS代理
-func (p *Proxy) httpsProxy(ctx *Context, clientConn net.Conn) {
-	tlsConfig, err := p.cert.GenerateTlsConfig(ctx.Req.URL.Host)
-	if err != nil {
-		p.delegate.ErrorLog(fmt.Errorf("%s - HTTPS解密, 生成证书失败: %s", ctx.Req.URL.Host, err))
-		return
-	}
-	tlsClientConn := tls.Server(clientConn, tlsConfig)
-	_ = tlsClientConn.SetDeadline(time.Now().Add(defaultClientReadWriteTimeout))
-	defer func() {
-		_ = tlsClientConn.Close()
-	}()
-	if err := tlsClientConn.Handshake(); err != nil {
-		p.tunnelConnected(ctx, err)
-		p.delegate.ErrorLog(fmt.Errorf("%s - HTTPS解密, 握手失败: %s", ctx.Req.URL.Host, err))
-		return
-	}
-	_ = tlsClientConn.SetDeadline(time.Time{})
-
+func (p *Proxy) httpsProxy(ctx *Context, tlsClientConn *tls.Conn) {
 	buf := bufio.NewReader(tlsClientConn)
 	tlsReq, err := http.ReadRequest(buf)
 	if err != nil {
@@ -450,6 +433,26 @@ func (p *Proxy) tunnelProxy(ctx *Context, rw http.ResponseWriter) {
 		p.websocketProxy(ctx, clientConn)
 		return
 	}
+	var tlsClientConn *tls.Conn
+	if p.decryptHTTPS {
+		tlsConfig, err := p.cert.GenerateTlsConfig(ctx.Req.URL.Host)
+		if err != nil {
+			p.tunnelConnected(ctx, err)
+			p.delegate.ErrorLog(fmt.Errorf("%s - HTTPS解密, 生成证书失败: %s", ctx.Req.URL.Host, err))
+			return
+		}
+		tlsClientConn = tls.Server(clientConn, tlsConfig)
+		_ = tlsClientConn.SetDeadline(time.Now().Add(defaultClientReadWriteTimeout))
+		defer func() {
+			_ = tlsClientConn.Close()
+		}()
+		if err := tlsClientConn.Handshake(); err != nil {
+			p.tunnelConnected(ctx, err)
+			p.delegate.ErrorLog(fmt.Errorf("%s - HTTPS解密, 握手失败: %s", ctx.Req.URL.Host, err))
+			return
+		}
+		_ = tlsClientConn.SetDeadline(time.Time{})
+	}
 
 	targetAddr := ctx.Req.URL.Host
 	if parentProxyURL != nil {
@@ -473,7 +476,7 @@ func (p *Proxy) tunnelProxy(ctx *Context, rw http.ResponseWriter) {
 	}
 
 	if p.decryptHTTPS {
-		p.httpsProxy(ctx, clientConn)
+		p.httpsProxy(ctx, tlsClientConn)
 	} else {
 		p.tunnelConnected(ctx, nil)
 		p.transfer(clientConn, targetConn)
