@@ -352,20 +352,6 @@ func (p *Proxy) httpProxy(ctx *Context, rw http.ResponseWriter) {
 
 // HTTPS代理
 func (p *Proxy) httpsProxy(ctx *Context, tlsClientConn *tls.Conn) {
-	buf := bufio.NewReader(tlsClientConn)
-	tlsReq, err := http.ReadRequest(buf)
-	if err != nil {
-		if err != io.EOF {
-			p.tunnelConnected(ctx, err)
-			p.delegate.ErrorLog(fmt.Errorf("%s - HTTPS解密, 读取客户端请求失败: %s", ctx.Req.URL.Host, err))
-		}
-		return
-	}
-	tlsReq.RemoteAddr = ctx.Req.RemoteAddr
-	tlsReq.URL.Scheme = "https"
-	tlsReq.URL.Host = tlsReq.Host
-
-	ctx.Req = tlsReq
 	if websocket.IsWebSocketUpgrade(ctx.Req) {
 		p.websocketProxy(ctx, NewConnBuffer(tlsClientConn, nil))
 		return
@@ -452,6 +438,20 @@ func (p *Proxy) tunnelProxy(ctx *Context, rw http.ResponseWriter) {
 			return
 		}
 		_ = tlsClientConn.SetDeadline(time.Time{})
+
+		buf := bufio.NewReader(tlsClientConn)
+		tlsReq, err := http.ReadRequest(buf)
+		if err != nil {
+			if err != io.EOF {
+				p.tunnelConnected(ctx, err)
+				p.delegate.ErrorLog(fmt.Errorf("%s - HTTPS解密, 读取客户端请求失败: %s", ctx.Req.URL.Host, err))
+			}
+			return
+		}
+		tlsReq.RemoteAddr = ctx.Req.RemoteAddr
+		tlsReq.URL.Scheme = "https"
+		tlsReq.URL.Host = tlsReq.Host
+		ctx.Req = tlsReq
 	}
 
 	targetAddr := ctx.Req.URL.Host
