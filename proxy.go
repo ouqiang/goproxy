@@ -26,6 +26,7 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptrace"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -457,6 +458,9 @@ func (p *Proxy) tunnelProxy(ctx *Context, rw http.ResponseWriter) {
 	targetAddr := ctx.Req.URL.Host
 	if parentProxyURL != nil {
 		targetAddr = parentProxyURL.Host
+	}
+	if !strings.Contains(targetAddr, ":") {
+		targetAddr += ":443"
 	}
 
 	targetConn, err := net.DialTimeout("tcp", targetAddr, defaultTargetConnectTimeout)
