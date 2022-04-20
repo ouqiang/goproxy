@@ -31,6 +31,8 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/viki-org/dnscache"
+
 	"github.com/ouqiang/goproxy/cert"
 	"github.com/ouqiang/websocket"
 )
@@ -39,10 +41,10 @@ const (
 	// 连接目标服务器超时时间
 	defaultTargetConnectTimeout = 5 * time.Second
 	// 目标服务器读写超时时间
-	defaultTargetReadWriteTimeout = 30 * time.Second
-	// 客户端读写超时时间
-	defaultClientReadWriteTimeout = 30 * time.Second
+	defaultTargetReadWriteTimeout = 10 * time.Second
 )
+
+type DialContext func(ctx context.Context, network, addr string) (net.Conn, error)
 
 // 隧道连接成功响应行
 var tunnelEstablishedResponseLine = []byte("HTTP/1.1 200 Connection established\r\n\r\n")
@@ -216,13 +218,11 @@ func New(opt ...Option) *Proxy {
 			TLSClientConfig: &tls.Config{
 				InsecureSkipVerify: true,
 			},
-			DialContext: (&net.Dialer{
-				Timeout:   30 * time.Second,
-				KeepAlive: 30 * time.Second,
-			}).DialContext,
 			MaxIdleConns:          100,
+			MaxConnsPerHost:       10,
+			ResponseHeaderTimeout: defaultTargetReadWriteTimeout,
 			IdleConnTimeout:       10 * time.Second,
-			TLSHandshakeTimeout:   10 * time.Second,
+			TLSHandshakeTimeout:   5 * time.Second,
 			ExpectContinueTimeout: 1 * time.Second,
 		}
 	}
@@ -235,6 +235,8 @@ func New(opt ...Option) *Proxy {
 		p.cert = cert.NewCertificate(opts.certCache, true)
 	}
 	p.transport = opts.transport
+	p.transport.DialContext = p.dialContext()
+	p.dnsCache = dnscache.New(5 * time.Minute)
 	p.transport.DisableKeepAlives = opts.disableKeepAlive
 	p.transport.Proxy = p.delegate.ParentProxy
 	p.clientTrace = opts.clientTrace
@@ -251,6 +253,7 @@ type Proxy struct {
 	cert               *cert.Certificate
 	transport          *http.Transport
 	clientTrace        *httptrace.ClientTrace
+	dnsCache           *dnscache.Resolver
 }
 
 var _ http.Handler = &Proxy{}
@@ -357,7 +360,6 @@ func (p *Proxy) httpsProxy(ctx *Context, tlsClientConn *tls.Conn) {
 		p.websocketProxy(ctx, NewConnBuffer(tlsClientConn, nil))
 		return
 	}
-
 	p.DoRequest(ctx, func(resp *http.Response, err error) {
 		if err != nil {
 			p.delegate.ErrorLog(fmt.Errorf("%s - HTTPS解密, 请求错误: %s", ctx.Req.URL, err))
@@ -429,7 +431,6 @@ func (p *Proxy) tunnelProxy(ctx *Context, rw http.ResponseWriter) {
 			return
 		}
 		tlsClientConn = tls.Server(clientConn, tlsConfig)
-		_ = tlsClientConn.SetDeadline(time.Now().Add(defaultClientReadWriteTimeout))
 		defer func() {
 			_ = tlsClientConn.Close()
 		}()
@@ -438,7 +439,6 @@ func (p *Proxy) tunnelProxy(ctx *Context, rw http.ResponseWriter) {
 			p.delegate.ErrorLog(fmt.Errorf("%s - HTTPS解密, 握手失败: %s", ctx.Req.URL.Host, err))
 			return
 		}
-		_ = tlsClientConn.SetDeadline(time.Time{})
 
 		buf := bufio.NewReader(tlsClientConn)
 		tlsReq, err := http.ReadRequest(buf)
@@ -472,8 +472,6 @@ func (p *Proxy) tunnelProxy(ctx *Context, rw http.ResponseWriter) {
 	defer func() {
 		_ = targetConn.Close()
 	}()
-	_ = clientConn.SetDeadline(time.Now().Add(defaultClientReadWriteTimeout))
-	_ = targetConn.SetDeadline(time.Now().Add(defaultTargetReadWriteTimeout))
 	if parentProxyURL != nil {
 		tunnelRequestLine := makeTunnelRequestLine(ctx.Req.URL.Host)
 		_, _ = targetConn.Write([]byte(tunnelRequestLine))
@@ -515,7 +513,7 @@ func (p *Proxy) websocketProxy(ctx *Context, srcConn *ConnBuffer) {
 	}
 
 	up := &websocket.Upgrader{
-		HandshakeTimeout: 5 * time.Second,
+		HandshakeTimeout: defaultTargetConnectTimeout,
 		ReadBufferSize:   4096,
 		WriteBufferSize:  4096,
 		CheckOrigin: func(r *http.Request) bool {
@@ -535,7 +533,9 @@ func (p *Proxy) websocketProxy(ctx *Context, srcConn *ConnBuffer) {
 		WriteBufferSize: 4096,
 	}
 
-	targetWSConn, _, err := d.Dial(u.String(), ctx.Req.Header)
+	dialTimeoutCtx, cancel := context.WithTimeout(context.Background(), defaultTargetConnectTimeout)
+	defer cancel()
+	targetWSConn, _, err := d.DialContext(dialTimeoutCtx, u.String(), ctx.Req.Header)
 	if err != nil {
 		p.tunnelConnected(ctx, err)
 		p.delegate.ErrorLog(fmt.Errorf("%s - 目标连接升级到websocket协议错误: %s", ctx.Req.URL.Host, err))
@@ -643,6 +643,23 @@ func (p *Proxy) tunnelConnected(ctx *Context, err error) {
 		Body:       http.NoBody,
 	}
 	p.delegate.BeforeResponse(ctx, resp, nil)
+}
+
+func (p *Proxy) dialContext() DialContext {
+	return func(ctx context.Context, network, addr string) (net.Conn, error) {
+		dialer := &net.Dialer{
+			Timeout: defaultTargetConnectTimeout,
+		}
+		separator := strings.LastIndex(addr, ":")
+		ip, err := p.dnsCache.FetchOneString(addr[:separator])
+		if err != nil {
+			return nil, err
+		}
+
+		addr = ip + addr[separator:]
+
+		return dialer.DialContext(ctx, network, addr)
+	}
 }
 
 // 获取底层连接
