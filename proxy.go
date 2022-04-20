@@ -17,12 +17,10 @@ package goproxy
 
 import (
 	"bufio"
-	"bytes"
 	"context"
 	"crypto/tls"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"net"
 	"net/http"
 	"net/http/httptrace"
@@ -651,9 +649,16 @@ func (p *Proxy) dialContext() DialContext {
 			Timeout: defaultTargetConnectTimeout,
 		}
 		separator := strings.LastIndex(addr, ":")
-		ip, err := p.dnsCache.FetchOneString(addr[:separator])
+		ips, err := p.dnsCache.Fetch(addr[:separator])
 		if err != nil {
 			return nil, err
+		}
+		var ip string
+		for _, item := range ips {
+			ip = item.String()
+			if !strings.Contains(ip, ":") {
+				break
+			}
 		}
 
 		addr = ip + addr[separator:]
@@ -692,24 +697,6 @@ func CloneHeader(h http.Header, h2 http.Header) {
 		copy(vv2, vv)
 		h2[k] = vv2
 	}
-}
-
-// CloneBody 拷贝Body
-func CloneBody(b io.ReadCloser, limit int64) (r io.ReadCloser, body []byte, err error) {
-	if b == nil {
-		return http.NoBody, nil, nil
-	}
-	var rl io.Reader = b
-	if limit > 0 {
-		rl = io.LimitReader(b, limit)
-	}
-	body, err = ioutil.ReadAll(rl)
-	if err != nil {
-		return http.NoBody, nil, err
-	}
-	r = ioutil.NopCloser(bytes.NewReader(body))
-
-	return r, body, nil
 }
 
 var hopHeaders = []string{
