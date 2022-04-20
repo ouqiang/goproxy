@@ -218,7 +218,6 @@ func New(opt ...Option) *Proxy {
 			},
 			MaxIdleConns:          100,
 			MaxConnsPerHost:       10,
-			ResponseHeaderTimeout: defaultTargetReadWriteTimeout,
 			IdleConnTimeout:       10 * time.Second,
 			TLSHandshakeTimeout:   5 * time.Second,
 			ExpectContinueTimeout: 1 * time.Second,
